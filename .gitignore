@@ -1,0 +1,5 @@
+build
+dist
+sgp.egg-info
+.idea
+__pycache__
