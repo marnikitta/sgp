@@ -90,7 +90,11 @@ class VariationalGP(BaseEstimator, RegressorMixin):
     def sample_y(self, X, n_samples=1, random_state=0, latent=True):
         rng = check_random_state(random_state)
         y_mean, y_cov = self.predict(X, latent=latent, return_cov=True)
-        return rng.multivariate_normal(y_mean, y_cov, n_samples).T
+        return rng.multivariate_normal(y_mean, y_cov, n_samples)
+
+    def probability_matching(self, X, n_samples=10, random_state=0, latent=True):
+        sample = self.sample_y(X, n_samples=n_samples, random_state=random_state, latent=latent)
+        return np.bincount(np.argmax(sample, axis=1), minlength=X.shape[0]) / n_samples
 
     def log_marginal_likelihood(self, theta, std, inducing_points, eval_gradient=True):
         X_u = inducing_points
@@ -104,7 +108,7 @@ class VariationalGP(BaseEstimator, RegressorMixin):
         K_u_f, d_u_f_all = kernel_(X_u, X_f, eval_gradient=True)
         K_u_f_dot = K_u_f.dot(K_u_f.T)
 
-        eps = 1e-7 * np.eye(K_u_u.shape[0])
+        eps = 1e-5 * np.eye(K_u_u.shape[0])
 
         try:
             L = cholesky(K_u_u + K_u_f_dot / std ** 2 + eps, lower=True)
