@@ -1,11 +1,16 @@
+import numpy
 import setuptools
+from Cython.Build import cythonize
+from setuptools.extension import Extension
+
+extensions = [Extension('sgp.sobol', ['sgp/sobol.pyx'], include_dirs=[numpy.get_include()])]
 
 with open("README.md", "r") as fh:
     long_description = fh.read()
 
 setuptools.setup(
     name="sgp",
-    version="0.2.1",
+    version="0.2.6",
     author="Nikita Marshalkin",
     author_email="marnikitta@gmail.com",
     description="Sparse gaussian process regression",
@@ -13,6 +18,8 @@ setuptools.setup(
     long_description_content_type="text/markdown",
     url="https://github.com/marnikitta/sgp",
     packages=setuptools.find_packages(),
+    ext_modules=cythonize(extensions),
+    package_data={"": ["*.pyx"]},
     classifiers=[
         "Programming Language :: Python :: 3",
         "License :: OSI Approved :: MIT License",
