@@ -108,7 +108,7 @@ class VariationalGP(BaseEstimator, RegressorMixin):
         K_u_f, d_u_f_all = kernel_(X_u, X_f, eval_gradient=True)
         K_u_f_dot = K_u_f.dot(K_u_f.T)
 
-        eps = 1e-5 * np.eye(K_u_u.shape[0])
+        eps = 1e-7 * np.eye(K_u_u.shape[0])
 
         try:
             L = cholesky(K_u_u + K_u_f_dot / std ** 2 + eps, lower=True)
@@ -162,5 +162,7 @@ class VariationalGP(BaseEstimator, RegressorMixin):
         lml_grad[-1] += std * y.dot(quad_no_y / std ** 2 - K_u_f.T.dot(alpha_prime) / (std ** 4))
 
         lml_grad[-1] += std ** -3 * trace
+
+        print(f'exp(theta): {np.exp(theta)}, std: {std}, lml: {lml}, lml_grad: {lml_grad}')
 
         return lml, lml_grad
