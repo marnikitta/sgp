@@ -1,6 +1,7 @@
 from typing import Optional, List, Callable
 
 import numpy as np
+import scipy.special
 import scipy.stats
 
 from .binarizer import Binarizer
@@ -11,7 +12,7 @@ from .tree import DecisionTree, DecisionTreeModel
 class Boosting:
     def __init__(self,
                  iterations: int = 100,
-                 shrinkage: float = 0.1,
+                 shrinkage: float = 0.01,
                  binarizer: Optional[Binarizer] = None,
                  n_bins: int = 32,
                  random_state: int = 42,
@@ -69,3 +70,20 @@ class L2Loss(DifferentiableLoss):
 
     def gradient(self, f: np.ndarray) -> np.ndarray:
         return -2 * (self.y - f)
+
+
+class PairwiseLL(DifferentiableLoss):
+    def __init__(self, y: np.ndarray, groups: np.ndarray):
+        self.y = y
+        self.groups = groups
+
+    def gradient(self, f: np.ndarray) -> np.ndarray:
+        groups_count = np.max(self.groups)
+        grad = np.zeros(self.y.shape[0])
+        for g in np.arange(groups_count + 1):
+            group_ids = (self.groups == g)
+            diffs = f[group_ids].reshape(1, -1) - f[group_ids].reshape(-1, 1)
+            must = self.y[group_ids].reshape(1, -1) - self.y[group_ids].reshape(-1, 1)
+            signs = (must < 0) * 2 - 1
+            grad[group_ids] = np.sum(signs * scipy.special.expit(signs * diffs), axis=0)
+        return grad

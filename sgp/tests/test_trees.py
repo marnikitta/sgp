@@ -6,7 +6,7 @@ from sklearn.datasets import load_boston
 from sklearn.metrics import r2_score
 from sklearn.model_selection import train_test_split
 
-from sgp.trees.boosting import Boosting, L2Loss
+from sgp.trees.boosting import Boosting, L2Loss, PairwiseLL
 from sgp.trees.forest import RandomForest
 from sgp.trees.loss import MSELoss
 from sgp.trees.tree import DecisionTree, DecisionTreeModel
@@ -61,7 +61,16 @@ def test_boston_boosting():
 
 
 def train_boston_pairwise():
-    pass
+    X, y = load_boston(return_X_y=True)
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=1)
+
+    boosts = Boosting(shrinkage=0.01, iterations=100) \
+        .fit(X_train, PairwiseLL(y_train, np.zeros(y_train.shape)))
+
+    predicts = np.sum(np.vstack([t.predict(X_test) for t in boosts]), axis=0)
+    corr = kendalltau(y_test, predicts).correlation
+    print(corr)
+    assert corr > 0.7
 
 
 test_boston_fit_single_tree()
