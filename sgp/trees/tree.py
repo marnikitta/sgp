@@ -3,17 +3,15 @@
 from typing import Tuple, List, Optional
 
 import numpy as np
-# TODO:
-#   random forest
-#   multiprocessing
-import scipy.stats
-from joblib import Parallel, delayed
-from sklearn.utils.random import sample_without_replacement
+from sklearn.utils import assert_all_finite
+
+from .binarizer import Binarizer
+from .loss import KLUpliftLoss, MSEUpliftLoss, MSELoss, AdditiveLoss
 
 
 class DecisionTree:
     def __init__(self, max_depth: int = 3,
-                 binarizer: Optional['Binarizer'] = None,
+                 binarizer: Optional[Binarizer] = None,
                  n_bins: int = 32,
                  verbose: bool = False):
         self.max_depth = max_depth
@@ -60,9 +58,9 @@ class DecisionTree:
 
     @staticmethod
     def check_input(X: np.ndarray,
-                    binarizer: Optional['Binarizer'],
+                    binarizer: Optional[Binarizer],
                     n_bins: int,
-                    binarize: bool) -> Tuple[np.ndarray, 'Binarizer']:
+                    binarize: bool) -> Tuple[np.ndarray, Binarizer]:
         df_bins = X
 
         assert (binarize and binarizer is None) or (not binarize and binarizer is not None)
@@ -82,9 +80,11 @@ class DecisionTree:
 
     def fit(self, X: np.ndarray,
             point_stats: np.ndarray,
-            loss: 'AdditiveLoss',
+            loss: AdditiveLoss,
             binarize: bool = True) -> 'DecisionTreeModel':
         df_bins, binarizer = self.check_input(X, self.binarizer, self.n_bins, binarize)
+        assert_all_finite(X)
+        assert_all_finite(point_stats)
 
         items_leafs = np.zeros(df_bins.shape[1], dtype=np.int64)
 
@@ -103,7 +103,7 @@ class DecisionTree:
                 left_stats, right_stats = self.split_stats(stats, node_id, binarizer.n_bins)
                 assert left_stats.shape[2] == binarizer.n_bins + 1
                 assert right_stats.shape[2] == binarizer.n_bins + 1
-                assert np.all((left_stats[:, 0, 0] + right_stats[:, 0, 0]) == current_node.stats)
+                assert np.allclose((left_stats[:, 0, 0] + right_stats[:, 0, 0]), current_node.stats)
 
                 split_scores = loss.score(left_stats) + loss.score(right_stats)
                 valid_splits = loss.valid_stats(left_stats) & loss.valid_stats(right_stats)
@@ -157,8 +157,8 @@ class DecisionTree:
             leafs_bins = np.add(df_bins[f_index], bins_offsets, out=leafs_bins)
 
             for s_index in np.arange(result.shape[0]):
-                result[s_index, f_index] = np.bincount(leafs_bins, weights=point_stats[s_index],
-                                                       minlength=layer_n_bins)
+                b_count = np.bincount(leafs_bins, weights=point_stats[s_index], minlength=layer_n_bins)
+                result[s_index, f_index] = b_count
 
         return result
 
@@ -176,8 +176,8 @@ class DecisionTreeModel:
     def __init__(self,
                  nodes: List['TreeNode'],
                  depth: int,
-                 binarizer: 'Binarizer',
-                 loss: 'AdditiveLoss'):
+                 binarizer: Binarizer,
+                 loss: AdditiveLoss):
         self.binarizer = binarizer
         self.nodes = nodes
         self.depth = depth
@@ -277,188 +277,3 @@ class TreeNode:
         left_flags = ~right_flags
 
         return left_flags, right_flags
-
-
-class RandomForest:
-    def __init__(self,
-                 n_trees=100,
-                 bootstrap: bool = True,
-                 feature_samples: float = 0.7,
-                 binarizer: Optional['Binarizer'] = None,
-                 n_bins: int = 32,
-                 random_state: int = 42,
-                 n_jobs: int = 1,
-                 **kwargs):
-        self.feature_samples = feature_samples
-        self.bootstrap = bootstrap
-        self.n_trees = n_trees
-        self.random_state = random_state
-        self.binarizer = binarizer
-        self.n_bins = n_bins
-        self.n_jobs = n_jobs
-        self.tree_params = kwargs
-
-    def fit_uplift(self, X: np.ndarray,
-                   y: np.ndarray,
-                   t: np.ndarray,
-                   w: Optional[np.ndarray] = None,
-                   binarize: bool = True,
-                   **kwargs) -> List[DecisionTreeModel]:
-        df_bins, binarizer = DecisionTree.check_input(X, self.binarizer, self.n_bins, binarize)
-
-        def train_ith_tree(i: int) -> 'DecisionTreeModel':
-            boot_features = sample_without_replacement(df_bins.shape[0], int(df_bins.shape[0] * self.feature_samples),
-                                                       random_state=self.random_state + i)
-            boot_w = scipy.stats.poisson(1).rvs(df_bins.shape[1], random_state=self.random_state + i)
-            if w is not None:
-                boot_w = boot_w * w
-            m = DecisionTree(binarizer=binarizer.sample_columns(boot_features), **self.tree_params)
-
-            df_bins_boot = df_bins[boot_features]
-            tree = m.fit_uplift(df_bins_boot, y, w=boot_w, t=t, binarize=False, **kwargs)
-
-            w_oob = (boot_w == 0).astype(np.int64)
-
-            tree.predict(df_bins_boot, UpliftLoss.point_stats(y, t) * w_oob, binarize=False)
-
-            tree.binarizer = binarizer
-            for n in tree.nodes:
-                if n is None or n.is_terminal():
-                    continue
-                n.f_index = boot_features[n.f_index]
-
-            print(f'{i}-th tree is done')
-            return tree
-
-        return Parallel(n_jobs=self.n_jobs)(delayed(train_ith_tree)(i) for i in range(self.n_trees))
-
-
-class AdditiveLoss:
-    def valid_stats(self, stats):
-        pass
-
-    def leaf_predicts(self, stats):
-        pass
-
-    def score(self, stats, parent_stats=None):
-        pass
-
-    def pretty_str(self, stats) -> str:
-        pass
-
-
-class UpliftLoss(AdditiveLoss):
-    def __init__(self, min_samples_leaf: int = 100,
-                 min_treatment_leaf: int = 20,
-                 prior_factor: int = 0):
-        self.min_treatment_leaf = min_treatment_leaf
-        self.min_samples_leaf = min_samples_leaf
-        self.prior_factor = prior_factor
-
-    @staticmethod
-    def point_stats(y: np.ndarray, tr: np.ndarray) -> np.ndarray:
-        return np.vstack((y,
-                          tr * y,
-                          np.ones(y.shape),
-                          tr))
-
-    def leaf_predicts(self, stats):
-        p = stats[1] / stats[3]
-        q = (stats[0] - stats[1]) / (stats[2] - stats[3])
-        return p - q
-
-    def valid_stats(self, stats: np.ndarray):
-        return (stats[2] >= self.min_samples_leaf) \
-               & (stats[3] >= self.min_treatment_leaf) \
-               & (stats[2] - stats[3] >= self.min_treatment_leaf)
-
-    def pretty_str(self, stats) -> str:
-        uplift = f'uplift={self.leaf_predicts(stats):.3}'
-        n = f'n={stats[3]:.0f}#{stats[2] - stats[3]:.0f}'
-        score = f'score={self.score(stats):.2}'
-        return f'{uplift}, {n}, {score}'
-
-    def pq(self, stats, parent_stats=None):
-        if parent_stats is not None:
-            p_parent, q_parent = self.pq(parent_stats)
-            p = (stats[1] + self.prior_factor * p_parent) / (stats[3] + self.prior_factor)
-            q = (stats[0] - stats[1] + self.prior_factor * q_parent) / (stats[2] - stats[3] + self.prior_factor)
-        else:
-            p = stats[1] / stats[3]
-            q = (stats[0] - stats[1]) / (stats[2] - stats[3])
-
-        return p, q
-
-
-class KLUpliftLoss(UpliftLoss):
-    def score(self, stats, parent_stats=None):
-        p, q = self.pq(stats, parent_stats)
-        return -p * np.log(p / q)
-
-
-class MSEUpliftLoss(UpliftLoss):
-    def score(self, stats, parent_stats=None):
-        p, q = self.pq(stats, parent_stats)
-        return -(p - q) ** 2
-
-
-class MSELoss(AdditiveLoss):
-    def __init__(self, min_samples_leaf: int = 100):
-        self.min_samples_leaf = min_samples_leaf
-
-    def leaf_predicts(self, stats):
-        return stats[1] / stats[0]
-
-    def valid_stats(self, stats: np.ndarray):
-        return stats[0] >= self.min_samples_leaf
-
-    @staticmethod
-    def point_stats(y: np.ndarray):
-        return np.vstack((np.ones(y.shape), y, y ** 2))
-
-    def score(self, stats, parent_stats=None) -> np.ndarray:
-        return (stats[2] / stats[0] - (stats[1] / stats[0]) ** 2) * stats[0]
-
-    def pretty_str(self, stats: np.ndarray) -> str:
-        n = f'n={stats[0]:.0f}'
-        mean = f'mean={self.leaf_predicts(stats):.2f}'
-        var = f'var={self.score(stats):.2f}'
-        return f'{mean}, {n}, {var}'
-
-
-class Binarizer:
-    def __init__(self, n_bins: int = 64):
-        self.n_bins = n_bins
-        self.boundaries = None
-
-    def is_fitted(self):
-        return self.boundaries is not None
-
-    def fit(self, X: np.ndarray) -> 'Binarizer':
-        boundaries = np.zeros((X.shape[1], self.n_bins), np.float64)
-        for f_index in np.arange(X.shape[1]):
-            # noinspection PyTypeChecker
-            bins = np.percentile(X[:, f_index],
-                                 np.linspace(0, 100, num=self.n_bins, endpoint=False),
-                                 interpolation='lower')
-            boundaries[f_index] = bins
-
-        self.boundaries = boundaries
-        return self
-
-    def transform(self, X: np.ndarray) -> np.ndarray:
-        assert self.is_fitted()
-        df_bins = np.zeros(X.T.shape, np.int64)
-        for f_index in np.arange(df_bins.shape[0]):
-            df_bins[f_index] = np.digitize(X[:, f_index], self.boundaries[f_index]).astype(np.int64) - 1
-
-        return df_bins
-
-    def fit_transform(self, X: np.ndarray) -> np.ndarray:
-        return self.fit(X).transform(X)
-
-    def sample_columns(self, columns: np.ndarray) -> 'Binarizer':
-        assert self.is_fitted()
-        result = Binarizer(self.n_bins)
-        result.boundaries = self.boundaries[columns]
-        return result
