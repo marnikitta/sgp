@@ -183,7 +183,7 @@ class DecisionTreeModel:
         self.depth = depth
         self.loss = loss
 
-    def bins_importances(self) -> np.ndarray:
+    def importances(self) -> np.ndarray:
         result = np.zeros(self.binarizer.boundaries.shape)
 
         for n in self.nodes:
@@ -226,6 +226,36 @@ class DecisionTreeModel:
                 leaf_means[i] = self.loss.leaf_predicts(n.stats)
 
         return leaf_means[items_leafs]
+
+    def pdp(self) -> np.ndarray:
+        def g(node_index: int, point_weights: np.ndarray):
+            n = self.nodes[node_index]
+            assert n is not None
+
+            if self.nodes[node_index].is_terminal():
+                return self.loss.score(n.stats) * point_weights
+
+            left_n = self.nodes[2 * node_index + 1]
+            right_n = self.nodes[2 * node_index + 2]
+
+            w_left = point_weights.copy()
+            w_right = point_weights
+
+            w_left[n.f_index, n.bin_id:] = 0
+            w_right[n.f_index, :n.bin_id] = 0
+
+            total_weight = self.loss.node_weight(n.stats)
+            left_weight = self.loss.node_weight(left_n.stats)
+            right_weight = self.loss.node_weight(right_n.stats)
+            assert np.allclose(left_weight + right_weight, total_weight)
+
+            ind = np.delete(np.arange(self.binarizer.boundaries.shape[0]), n.f_index)
+            w_left[ind] *= left_weight / total_weight
+            w_right[ind] *= right_weight / total_weight
+
+            return g(2 * node_index + 1, w_left) + g(2 * node_index + 2, w_right)
+
+        return g(0, np.ones(self.binarizer.boundaries.shape, dtype=np.float64))
 
     def pretty_str(self, feature_names: Optional[List[str]] = None) -> str:
         assert self.nodes[0] is not None

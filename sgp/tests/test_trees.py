@@ -28,10 +28,10 @@ def test_boston_fit_forest():
     X, y = load_boston(return_X_y=True)
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=9)
 
-    forest = RandomForest(max_depth=6, n_trees=500, n_bins=16, random_state=31, n_jobs=5, verbose=False)
+    forest = RandomForest(max_depth=6, n_trees=500, n_bins=16, random_state=31, n_jobs=5, verbose=False, oob_stats=False)
     trees = forest.fit(X_train, MSELoss().point_stats(y_train), MSELoss(min_samples_leaf=10))
 
-    predicts = np.mean(np.vstack([t.predict(X_test) for t in trees]), axis=0)
+    predicts = trees.predict(X_test)
     score = r2_score(y_test, predicts)
     corr = kendalltau(y_test, predicts).correlation
     print(score, corr)

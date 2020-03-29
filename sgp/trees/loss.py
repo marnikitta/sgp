@@ -8,6 +8,9 @@ class AdditiveLoss:
     def leaf_predicts(self, stats):
         pass
 
+    def node_weight(self, stats):
+        return stats[0]
+
     def score(self, stats, parent_stats=None):
         pass
 
@@ -22,6 +25,9 @@ class UpliftLoss(AdditiveLoss):
         self.min_treatment_leaf = min_treatment_leaf
         self.min_samples_leaf = min_samples_leaf
         self.prior_factor = prior_factor
+
+    def node_weight(self, stats):
+        return stats[3]
 
     @staticmethod
     def point_stats(y: np.ndarray, tr: np.ndarray) -> np.ndarray:
