@@ -72,7 +72,7 @@ class DecisionTree:
             binarizer = binarizer
             df_bins = binarizer.transform(X)
 
-        assert binarizer.is_fitted()
+        assert binarizer.boundaries is not None
         assert df_bins.dtype == np.int64
         assert df_bins.shape[0] < df_bins.shape[1]
 
@@ -83,8 +83,11 @@ class DecisionTree:
             loss: AdditiveLoss,
             binarize: bool = True) -> 'DecisionTreeModel':
         df_bins, binarizer = self.check_input(X, self.binarizer, self.n_bins, binarize)
+        assert binarizer.boundaries is not None
         assert_all_finite(X)
         assert_all_finite(point_stats)
+
+        assert point_stats.shape[1] == df_bins.shape[1]
 
         items_leafs = np.zeros(df_bins.shape[1], dtype=np.int64)
 
@@ -182,6 +185,7 @@ class DecisionTreeModel:
         self.nodes = nodes
         self.depth = depth
         self.loss = loss
+        assert self.binarizer.boundaries is not None
 
     def importances(self) -> np.ndarray:
         result = np.zeros(self.binarizer.boundaries.shape)
