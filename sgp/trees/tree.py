@@ -277,7 +277,7 @@ class DecisionTreeModel:
             assert n is not None
 
             if self.nodes[node_index].is_terminal():
-                return self.loss.score(n.stats) * point_weights
+                return self.loss.leaf_predicts(n.stats) * point_weights
 
             left_n = self.nodes[2 * node_index + 1]
             right_n = self.nodes[2 * node_index + 2]

@@ -10,7 +10,7 @@ with open("README.md", "r") as fh:
 
 setuptools.setup(
     name="sgp",
-    version="0.3",
+    version="0.3.1",
     author="Nikita Marshalkin",
     author_email="marnikitta@gmail.com",
     description="Sparse gaussian process regression",
