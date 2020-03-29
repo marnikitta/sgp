@@ -129,10 +129,9 @@ class DecisionTree:
                 nodes[left_node_id] = TreeNode(left_stats[:, best_f_index, best_bin])
                 nodes[right_node_id] = TreeNode(right_stats[:, best_f_index, best_bin])
 
-                current_leaf_items = items_leafs == node_id
-                left_flags, right_flags = current_node.process_items(df_bins)
-                items_leafs[left_flags & current_leaf_items] = left_node_id
-                items_leafs[right_flags & current_leaf_items] = right_node_id
+                left_flags, right_flags = current_node.process_items(df_bins, items_leafs == node_id)
+                items_leafs[left_flags] = left_node_id
+                items_leafs[right_flags] = right_node_id
 
                 if self.verbose:
                     print(current_node.pretty_str(loss))
@@ -197,7 +196,53 @@ class DecisionTreeModel:
 
         return result
 
-    def predict(self, X: np.ndarray, point_stats: Optional[np.ndarray] = None, binarize=True):
+    def prune(self, X: np.ndarray, point_stats: np.ndarray, binarize: bool = True) -> 'DecisionTreeModel':
+        if binarize:
+            df_bins = self.binarizer.transform(X)
+        else:
+            df_bins = X
+
+        assert df_bins.dtype == np.int64
+        assert df_bins.shape[0] < df_bins.shape[1]
+
+        items_leafs = np.zeros(df_bins.shape[1], np.int64)
+
+        result_nodes: List[Optional[TreeNode]] = [None] * len(self.nodes)
+        result_nodes[0] = TreeNode(point_stats.sum(axis=1))
+
+        for depth in np.arange(self.depth):
+            for node_id in DecisionTree.leafs_ids_range(depth):
+                node = result_nodes[node_id]
+                old_node = self.nodes[node_id]
+
+                if node is None or old_node.is_terminal():
+                    continue
+
+                assert old_node is not None and not old_node.is_terminal()
+
+                left_flags, right_flags = old_node.process_items(df_bins, items_leafs == node_id)
+
+                left_stats = np.sum(point_stats[:, left_flags], axis=1)
+                right_stats = np.sum(point_stats[:, right_flags], axis=1)
+
+                is_valid_spilt = self.loss.valid_stats(left_stats) & self.loss.valid_stats(right_stats)
+                if not is_valid_spilt:
+                    continue
+
+                split_score = self.loss.score(left_stats) + self.loss.score(right_stats)
+                gain = self.loss.score(node.stats) - split_score
+                if gain < 0:
+                    continue
+
+                node.set_split(old_node.f_index, old_node.bin_id, old_node.f_value)
+                result_nodes[2 * node_id + 1] = TreeNode(left_stats)
+                result_nodes[2 * node_id + 2] = TreeNode(right_stats)
+                items_leafs[left_flags] = 2 * node_id + 1
+                items_leafs[right_flags] = 2 * node_id + 2
+
+        return DecisionTreeModel(result_nodes, self.depth, self.binarizer, self.loss)
+
+    def predict(self, X: np.ndarray, binarize=True):
         if binarize:
             df_bins = self.binarizer.transform(X)
         else:
@@ -211,17 +256,12 @@ class DecisionTreeModel:
         for depth in np.arange(self.depth):
             for node_id in DecisionTree.leafs_ids_range(depth):
                 node = self.nodes[node_id]
-                if node is None:
+                if node is None or node.is_terminal():
                     continue
 
-                if point_stats is not None:
-                    node.stats = point_stats[:, items_leafs == node_id].sum(axis=1)
-
-                if not node.is_terminal():
-                    current_leaf_items = items_leafs == node_id
-                    left_flags, right_flags = node.process_items(df_bins)
-                    items_leafs[left_flags & current_leaf_items] = 2 * node_id + 1
-                    items_leafs[right_flags & current_leaf_items] = 2 * node_id + 2
+                left_flags, right_flags = node.process_items(df_bins, items_leafs == node_id)
+                items_leafs[left_flags] = 2 * node_id + 1
+                items_leafs[right_flags] = 2 * node_id + 2
 
         leaf_means = np.repeat(np.nan, len(self.nodes))
 
@@ -303,11 +343,11 @@ class TreeNode:
     def is_terminal(self) -> bool:
         return self.f_index is None
 
-    def process_items(self, X: np.ndarray):
+    def process_items(self, X: np.ndarray, current_node_flags: np.ndarray):
         assert (self.f_index is not None)
         assert (self.bin_id is not None)
 
         right_flags = X[self.f_index] >= self.bin_id
         left_flags = ~right_flags
 
-        return left_flags, right_flags
+        return left_flags & current_node_flags, right_flags & current_node_flags

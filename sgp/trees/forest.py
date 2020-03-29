@@ -42,7 +42,7 @@ class RandomForest:
 
             if self.oob_stats:
                 w_oob = (boot_w == 0).astype(np.int64)
-                tree.predict(df_bins, point_stats * w_oob, binarize=False)
+                tree = tree.prune(df_bins, point_stats * w_oob, binarize=False)
 
             if self.verbose:
                 print(f'{i}-th tree is done')

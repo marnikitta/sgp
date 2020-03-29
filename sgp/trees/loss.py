@@ -77,7 +77,7 @@ class MSEUpliftLoss(UpliftLoss):
 
 
 class MSELoss(AdditiveLoss):
-    def __init__(self, min_samples_leaf: int = 100):
+    def __init__(self, min_samples_leaf: int = 1):
         self.min_samples_leaf = min_samples_leaf
 
     def leaf_predicts(self, stats):
