@@ -229,18 +229,18 @@ class DecisionTreeModel:
     def pretty_str(self, feature_names: Optional[List[str]] = None) -> str:
         assert self.nodes[0] is not None
 
-        def append(node_id: int, depth):
+        def append(node_id: int, prefix: str, beginning: str):
             node = self.nodes[node_id]
 
-            result = ('    ' * depth + node.pretty_str(self.loss, feature_names))
+            result = beginning + node.pretty_str(self.loss, feature_names)
             if node.f_index is None:
                 return result
 
-            result += ('\n' + append(2 * node_id + 1, depth + 1))
-            result += ('\n' + append(2 * node_id + 2, depth + 1))
+            result += ('\n' + append(2 * node_id + 2, prefix + '│   ',  prefix + '├── '))
+            result += ('\n' + append(2 * node_id + 1, prefix + '    ',  prefix + '└── '))
             return result
 
-        return append(0, 0)
+        return append(0, '', '')
 
 
 class TreeNode:

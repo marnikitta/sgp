@@ -25,6 +25,7 @@ def test_boston_fit_single_tree():
     score = r2_score(y_test, tree.predict(X_test))
     corr = kendalltau(y_test, tree.predict(X_test)).correlation
     print(score, corr)
+    # print(tree.pretty_str(load_boston().feature_names))
     assert score > 0.6
 
 
