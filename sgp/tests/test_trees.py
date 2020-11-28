@@ -2,7 +2,7 @@ from typing import List
 
 import numpy as np
 from scipy.stats import kendalltau
-from sklearn.datasets import load_boston
+from sklearn.datasets import load_boston, make_regression
 from sklearn.metrics import r2_score
 from sklearn.model_selection import train_test_split
 
@@ -12,11 +12,15 @@ from sgp.trees.loss import MSELoss
 from sgp.trees.tree import DecisionTree, DecisionTreeModel
 
 
+def benchmark_tree():
+    X, y = make_regression(100000, 500, 50)
+    DecisionTree(max_depth=6, n_bins=64).fit(X, MSELoss.point_stats(y), MSELoss(min_samples_leaf=1))
+
+
 def test_boston_fit_single_tree():
     X, y = load_boston(return_X_y=True)
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=9)
-    tree = DecisionTree(max_depth=6, n_bins=32) \
-        .fit_regression(X_train, y_train, min_samples_leaf=50)
+    tree = DecisionTree(max_depth=6, n_bins=64).fit(X_train, MSELoss.point_stats(y_train), MSELoss(min_samples_leaf=1))
 
     score = r2_score(y_test, tree.predict(X_test))
     corr = kendalltau(y_test, tree.predict(X_test)).correlation
@@ -42,7 +46,7 @@ def test_boston_boosting():
     X, y = load_boston(return_X_y=True)
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=9)
 
-    boosting = Boosting(max_depth=3, shrinkage=0.1, iterations=200)
+    boosting = Boosting(max_depth=3, shrinkage=0.01, iterations=2000)
 
     y_pred = np.zeros(y_test.shape[0])
 
@@ -73,6 +77,7 @@ def train_boston_pairwise():
     assert corr > 0.7
 
 
+# benchmark_tree()
 test_boston_fit_single_tree()
 test_boston_fit_forest()
 test_boston_boosting()

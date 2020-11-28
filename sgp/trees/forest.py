@@ -34,15 +34,12 @@ class RandomForest:
             binarize: bool = True) -> 'RandomForestModel':
         df_bins, binarizer = DecisionTree.check_input(X, self.binarizer, self.n_bins, binarize)
 
+        m = DecisionTree(binarizer=binarizer, **self.tree_params)
+
         def train_ith_tree(i: int) -> DecisionTreeModel:
             boot_w = scipy.stats.poisson(1).rvs(df_bins.shape[1], random_state=self.random_state + i)
-            m = DecisionTree(binarizer=binarizer, **self.tree_params)
 
             tree = m.fit(df_bins, point_stats * boot_w, loss, binarize=False)
-
-            if self.oob_stats:
-                w_oob = (boot_w == 0).astype(np.int64)
-                tree = tree.prune(df_bins, point_stats * w_oob, binarize=False)
 
             if self.verbose:
                 print(f'{i}-th tree is done')
@@ -50,14 +47,6 @@ class RandomForest:
 
         trees = Parallel(n_jobs=self.n_jobs)(delayed(train_ith_tree)(i) for i in range(self.n_trees))
         return RandomForestModel(trees)
-
-    def fit_uplift(self, X: np.ndarray,
-                   y: np.ndarray,
-                   t: np.ndarray,
-                   w: Optional[np.ndarray] = None,
-                   binarize: bool = True,
-                   **kwargs) -> List[DecisionTreeModel]:
-        pass
 
 
 class RandomForestModel:

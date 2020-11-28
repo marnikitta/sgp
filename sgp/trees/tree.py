@@ -6,7 +6,7 @@ import numpy as np
 from sklearn.utils import assert_all_finite
 
 from .binarizer import Binarizer
-from .loss import KLUpliftLoss, MSEUpliftLoss, MSELoss, AdditiveLoss
+from .loss import AdditiveLoss
 
 
 class DecisionTree:
@@ -19,93 +19,36 @@ class DecisionTree:
         self.binarizer = binarizer
         self.n_bins = n_bins
 
-    def fit_uplift(self, X: np.ndarray,
-                   y: np.ndarray,
-                   t: np.ndarray,
-                   w: Optional[np.ndarray] = None,
-                   min_samples_leaf: int = 2000,
-                   min_treatment_leaf: int = 1000,
-                   loss='mse',
-                   prior_factor: int = 500,
-                   **kwargs) -> 'DecisionTreeModel':
-        if loss == 'kl':
-            loss = KLUpliftLoss(min_samples_leaf=min_samples_leaf, min_treatment_leaf=min_treatment_leaf,
-                                prior_factor=prior_factor)
-        elif loss == 'mse':
-            loss = MSEUpliftLoss(min_samples_leaf=min_samples_leaf, min_treatment_leaf=min_treatment_leaf,
-                                 prior_factor=prior_factor)
-        else:
-            raise BaseException(f'Unknown loss type {loss}. Use "kl" or "mse"')
-
-        point_stats = KLUpliftLoss.point_stats(y, t)
-        if w is not None:
-            point_stats = point_stats * w
-
-        return self.fit(X, point_stats, loss, **kwargs)
-
-    def fit_regression(self, X: np.ndarray,
-                       y: np.ndarray,
-                       w: Optional[np.ndarray] = None,
-                       min_samples_leaf: int = 1000,
-                       **kwargs) -> 'DecisionTreeModel':
-        loss = MSELoss(min_samples_leaf=min_samples_leaf)
-
-        point_stats = MSELoss.point_stats(y)
-        if w is not None:
-            point_stats = point_stats * w
-
-        return self.fit(X, point_stats, loss, **kwargs)
-
-    @staticmethod
-    def check_input(X: np.ndarray,
-                    binarizer: Optional[Binarizer],
-                    n_bins: int,
-                    binarize: bool) -> Tuple[np.ndarray, Binarizer]:
-        df_bins = X
-
-        assert (binarize and binarizer is None) or (not binarize and binarizer is not None)
-        binarizer = binarizer
-        if binarizer is None:
-            binarizer = Binarizer(n_bins)
-            df_bins = binarizer.fit_transform(X)
-        elif binarize:
-            binarizer = binarizer
-            df_bins = binarizer.transform(X)
-
-        assert binarizer.boundaries is not None
-        assert df_bins.dtype == np.int64
-        assert df_bins.shape[0] < df_bins.shape[1]
-
-        return df_bins, binarizer
-
     def fit(self, X: np.ndarray,
             point_stats: np.ndarray,
             loss: AdditiveLoss,
             binarize: bool = True) -> 'DecisionTreeModel':
-        df_bins, binarizer = self.check_input(X, self.binarizer, self.n_bins, binarize)
-        assert binarizer.boundaries is not None
         assert_all_finite(X)
         assert_all_finite(point_stats)
 
+        df_bins, binarizer = DecisionTree.check_input(X, self.binarizer, self.n_bins, binarize)
+        assert binarizer.boundaries is not None
         assert point_stats.shape[1] == df_bins.shape[1]
+        assert point_stats.ndim == 2
 
+        # Initially, all items are in the tree root
         items_leafs = np.zeros(df_bins.shape[1], dtype=np.int64)
 
         nodes: List[Optional[TreeNode]] = [None] * (2 ** (self.max_depth + 1))
         nodes[0] = TreeNode(point_stats.sum(axis=1))
 
         for depth in np.arange(self.max_depth):
-            stats = self.eval_stats(df_bins, items_leafs, point_stats, depth, binarizer.n_bins)
+            stats = DecisionTree.eval_stats(df_bins, items_leafs, point_stats, depth, binarizer.n_bins)
 
-            for node_id in self.leafs_ids_range(depth):
+            for node_id in DecisionTree.leafs_ids_range(depth):
                 current_node = nodes[node_id]
 
                 if current_node is None:
                     continue
 
-                left_stats, right_stats = self.split_stats(stats, node_id, binarizer.n_bins)
-                assert left_stats.shape[2] == binarizer.n_bins + 1
-                assert right_stats.shape[2] == binarizer.n_bins + 1
+                left_stats, right_stats = DecisionTree.split_stats(stats, node_id, binarizer.n_bins)
+                assert left_stats.shape[-1] == binarizer.n_bins + 1
+                assert right_stats.shape[-1] == binarizer.n_bins + 1
                 assert np.allclose((left_stats[:, 0, 0] + right_stats[:, 0, 0]), current_node.stats)
 
                 split_scores = loss.score(left_stats) + loss.score(right_stats)
@@ -139,8 +82,28 @@ class DecisionTree:
         return DecisionTreeModel(nodes, self.max_depth, binarizer, loss)
 
     @staticmethod
-    def leafs_ids_range(depth: int) -> np.ndarray:
-        return np.arange(2 ** depth - 1, 2 ** (depth + 1) - 1)
+    def check_input(X: np.ndarray,
+                    binarizer: Optional[Binarizer],
+                    n_bins: int,
+                    binarize: bool) -> Tuple[np.ndarray, Binarizer]:
+        df_bins = X
+
+        assert (binarize and binarizer is None) or (not binarize and binarizer is not None)
+        binarizer = binarizer
+        if binarizer is None:
+            binarizer = Binarizer(n_bins)
+            df_bins = binarizer.fit_transform(X)
+        elif binarize:
+            binarizer = binarizer
+            df_bins = binarizer.transform(X)
+
+        return df_bins, binarizer
+
+    @staticmethod
+    def leafs_ids_range(depth: int) -> range:
+        result = range(2 ** depth - 1, 2 ** (depth + 1) - 1)
+        assert len(result) == 2 ** depth, 'There should be 2^depth leafs in binary tree at level `depth`'
+        return result
 
     @staticmethod
     def eval_stats(df_bins: np.ndarray,
@@ -148,28 +111,36 @@ class DecisionTree:
                    point_stats: np.ndarray,
                    depth: int,
                    n_bins: int) -> np.ndarray:
-        layer_n_bins = (2 ** depth + (2 ** depth - 1)) * n_bins
-        stats_shape = (point_stats.shape[0], df_bins.shape[0], layer_n_bins)
-        result = np.zeros(stats_shape, np.float64)
+        # Use a single array for two axes to optimize bincount function call
+        leafs_shape = (2 ** depth + (2 ** depth - 1))
+        leaf_bin_axis_shape = leafs_shape * n_bins
+        result = np.zeros((point_stats.shape[0], df_bins.shape[0], leaf_bin_axis_shape), np.float64)
 
-        bins_offsets = items_leafs * n_bins
-        leafs_bins = np.zeros(df_bins.shape[1], dtype=np.int64)
+        # Offsets for the leaf-bin axis
+        leaf_bin_axis_offsets = items_leafs * n_bins
 
-        for f_index in np.arange(result.shape[1]):
-            leafs_bins = np.add(df_bins[f_index], bins_offsets, out=leafs_bins)
+        # Reuse for an optimization
+        leaf_bin_indexes = np.zeros(df_bins.shape[1], dtype=np.int64)
 
-            for s_index in np.arange(result.shape[0]):
-                b_count = np.bincount(leafs_bins, weights=point_stats[s_index], minlength=layer_n_bins)
+        for f_index in range(df_bins.shape[0]):
+            # Coordinates in leaf-bin axis
+            leaf_bin_indexes = np.add(df_bins[f_index], leaf_bin_axis_offsets, out=leaf_bin_indexes)
+
+            for s_index in range(point_stats.shape[0]):
+                b_count = np.bincount(leaf_bin_indexes, weights=point_stats[s_index], minlength=leaf_bin_axis_shape)
                 result[s_index, f_index] = b_count
 
-        return result
+        return result.reshape((point_stats.shape[0], df_bins.shape[0], leafs_shape, n_bins))
 
     @staticmethod
     def split_stats(stats: np.ndarray, node_id: int, n_bins: int) -> Tuple[np.ndarray, np.ndarray]:
-        stats = stats[:, :, node_id * n_bins: (node_id + 1) * n_bins]
+        # Take a subrange that corresponds to the current node
+        node_stats = stats[:, :, node_id]
+        assert node_stats.shape[-1] == n_bins, 'Subrange should have exactly n_bins elements. One for each bin'
 
-        left_stats = np.cumsum(stats, axis=2)
-        left_stats = np.insert(left_stats, 0, 0, axis=2)
+        left_stats = np.cumsum(node_stats, axis=-1)
+        # If we split using the first bin all items will belong to the right child
+        left_stats = np.insert(left_stats, 0, 0, axis=-1)
         right_stats = left_stats[:, :, [-1]] - left_stats
         return left_stats, right_stats
 
@@ -195,52 +166,6 @@ class DecisionTreeModel:
             result[n.f_index, n.bin_id] += 1
 
         return result
-
-    def prune(self, X: np.ndarray, point_stats: np.ndarray, binarize: bool = True) -> 'DecisionTreeModel':
-        if binarize:
-            df_bins = self.binarizer.transform(X)
-        else:
-            df_bins = X
-
-        assert df_bins.dtype == np.int64
-        assert df_bins.shape[0] < df_bins.shape[1]
-
-        items_leafs = np.zeros(df_bins.shape[1], np.int64)
-
-        result_nodes: List[Optional[TreeNode]] = [None] * len(self.nodes)
-        result_nodes[0] = TreeNode(point_stats.sum(axis=1))
-
-        for depth in np.arange(self.depth):
-            for node_id in DecisionTree.leafs_ids_range(depth):
-                node = result_nodes[node_id]
-                old_node = self.nodes[node_id]
-
-                if node is None or old_node.is_terminal():
-                    continue
-
-                assert old_node is not None and not old_node.is_terminal()
-
-                left_flags, right_flags = old_node.process_items(df_bins, items_leafs == node_id)
-
-                left_stats = np.sum(point_stats[:, left_flags], axis=1)
-                right_stats = np.sum(point_stats[:, right_flags], axis=1)
-
-                is_valid_spilt = self.loss.valid_stats(left_stats) & self.loss.valid_stats(right_stats)
-                if not is_valid_spilt:
-                    continue
-
-                split_score = self.loss.score(left_stats) + self.loss.score(right_stats)
-                gain = self.loss.score(node.stats) - split_score
-                if gain < 0:
-                    continue
-
-                node.set_split(old_node.f_index, old_node.bin_id, old_node.f_value)
-                result_nodes[2 * node_id + 1] = TreeNode(left_stats)
-                result_nodes[2 * node_id + 2] = TreeNode(right_stats)
-                items_leafs[left_flags] = 2 * node_id + 1
-                items_leafs[right_flags] = 2 * node_id + 2
-
-        return DecisionTreeModel(result_nodes, self.depth, self.binarizer, self.loss)
 
     def predict(self, X: np.ndarray, binarize=True):
         if binarize:
@@ -343,11 +268,11 @@ class TreeNode:
     def is_terminal(self) -> bool:
         return self.f_index is None
 
-    def process_items(self, X: np.ndarray, current_node_flags: np.ndarray):
+    def process_items(self, df_bins: np.ndarray, current_node_flags: np.ndarray):
         assert (self.f_index is not None)
         assert (self.bin_id is not None)
 
-        right_flags = X[self.f_index] >= self.bin_id
+        right_flags = self.bin_id <= df_bins[self.f_index]
         left_flags = ~right_flags
 
         return left_flags & current_node_flags, right_flags & current_node_flags

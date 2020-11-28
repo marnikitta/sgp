@@ -11,7 +11,7 @@ class AdditiveLoss:
     def node_weight(self, stats):
         return stats[0]
 
-    def score(self, stats, parent_stats=None):
+    def score(self, stats):
         pass
 
     def pretty_str(self, stats) -> str:
@@ -52,27 +52,21 @@ class UpliftLoss(AdditiveLoss):
         score = f'score={self.score(stats):.2}'
         return f'{uplift}, {n}, {score}'
 
-    def pq(self, stats, parent_stats=None):
-        if parent_stats is not None:
-            p_parent, q_parent = self.pq(parent_stats)
-            p = (stats[1] + self.prior_factor * p_parent) / (stats[3] + self.prior_factor)
-            q = (stats[0] - stats[1] + self.prior_factor * q_parent) / (stats[2] - stats[3] + self.prior_factor)
-        else:
-            p = stats[1] / stats[3]
-            q = (stats[0] - stats[1]) / (stats[2] - stats[3])
-
+    def pq(self, stats):
+        p = stats[1] / stats[3]
+        q = (stats[0] - stats[1]) / (stats[2] - stats[3])
         return p, q
 
 
 class KLUpliftLoss(UpliftLoss):
-    def score(self, stats, parent_stats=None):
-        p, q = self.pq(stats, parent_stats)
+    def score(self, stats):
+        p, q = self.pq(stats)
         return -p * np.log(p / q)
 
 
 class MSEUpliftLoss(UpliftLoss):
-    def score(self, stats, parent_stats=None):
-        p, q = self.pq(stats, parent_stats)
+    def score(self, stats):
+        p, q = self.pq(stats)
         return -(p - q) ** 2
 
 
@@ -90,7 +84,9 @@ class MSELoss(AdditiveLoss):
     def point_stats(y: np.ndarray):
         return np.vstack((np.ones(y.shape), y, y ** 2))
 
-    def score(self, stats, parent_stats=None) -> np.ndarray:
+    def score(self, stats) -> np.ndarray:
+        assert stats.shape[0] == 3
+        # sum of squares
         return (stats[2] / stats[0] - (stats[1] / stats[0]) ** 2) * stats[0]
 
     def pretty_str(self, stats: np.ndarray) -> str:
