@@ -31,6 +31,6 @@ def test_ternary_arrays():
     assert len(set(df_bins.ravel())) == 3
 
 
-test_binarizer()
-test_binary_arrays()
-test_ternary_arrays()
+# test_binarizer()
+# test_binary_arrays()
+# test_ternary_arrays()

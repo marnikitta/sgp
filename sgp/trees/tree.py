@@ -18,6 +18,8 @@ class DecisionTree:
         self.verbose = verbose
         self.binarizer = binarizer
         self.n_bins = n_bins
+        if binarizer is not None:
+            self.n_bins = binarizer.n_bins
 
     def fit(self, X: np.ndarray,
             point_stats: np.ndarray,
@@ -89,12 +91,10 @@ class DecisionTree:
         df_bins = X
 
         assert (binarize and binarizer is None) or (not binarize and binarizer is not None)
-        binarizer = binarizer
         if binarizer is None:
             binarizer = Binarizer(n_bins)
             df_bins = binarizer.fit_transform(X)
         elif binarize:
-            binarizer = binarizer
             df_bins = binarizer.transform(X)
 
         return df_bins, binarizer
@@ -239,8 +239,8 @@ class DecisionTreeModel:
             if node.f_index is None:
                 return result
 
-            result += ('\n' + append(2 * node_id + 2, prefix + '│   ',  prefix + '├── '))
-            result += ('\n' + append(2 * node_id + 1, prefix + '    ',  prefix + '└── '))
+            result += ('\n' + append(2 * node_id + 2, prefix + '│   ', prefix + '├── '))
+            result += ('\n' + append(2 * node_id + 1, prefix + '    ', prefix + '└── '))
             return result
 
         return append(0, '', '')

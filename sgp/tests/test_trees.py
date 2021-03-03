@@ -12,9 +12,9 @@ from sgp.trees.loss import MSELoss
 from sgp.trees.tree import DecisionTree, DecisionTreeModel
 
 
-def benchmark_tree():
-    X, y = make_regression(100000, 500, 50)
-    DecisionTree(max_depth=6, n_bins=64).fit(X, MSELoss.point_stats(y), MSELoss(min_samples_leaf=1))
+def benchmark_tree(n: int = 100000, f_count: int = 500, max_depth: int = 6, n_bins: int = 64):
+    X, y = make_regression(n, f_count, 50)
+    DecisionTree(max_depth=max_depth, n_bins=n_bins).fit(X, MSELoss.point_stats(y), MSELoss(min_samples_leaf=1))
 
 
 def test_boston_fit_single_tree():
@@ -77,9 +77,8 @@ def train_boston_pairwise():
     print(corr)
     assert corr > 0.7
 
-
 # benchmark_tree()
-test_boston_fit_single_tree()
-test_boston_fit_forest()
-test_boston_boosting()
-train_boston_pairwise()
+# test_boston_fit_single_tree()
+# test_boston_fit_forest()
+# test_boston_boosting()
+# train_boston_pairwise()

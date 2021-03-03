@@ -46,4 +46,4 @@ def test_uplift():
     assert (np.min(sig_scores > 2.2))
     assert (np.max(sig_scores > 2.5))
 
-test_uplift()
+# test_uplift()
