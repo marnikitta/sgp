@@ -38,3 +38,28 @@ class Binarizer:
         result = Binarizer(self.n_bins)
         result.boundaries = self.boundaries[columns]
         return result
+
+
+def binarization_plot(x, tr, y, n_bins=32):
+    bins_transformer = Binarizer(n_bins=n_bins).fit(x.reshape(-1, 1))
+    bins = bins_transformer.transform(x.reshape(-1, 1)).ravel()
+    boundaries = bins_transformer.boundaries[0]
+
+    tr_flags = tr.astype(np.bool)
+
+    sums_0 = np.bincount(bins[~tr_flags], y[~tr_flags], minlength=n_bins)
+    counts_0 = np.bincount(bins[~tr_flags], minlength=n_bins)
+    sums_sq_0 = np.bincount(bins[~tr_flags], y[~tr_flags] ** 2, minlength=n_bins)
+
+    sums_1 = np.bincount(bins[tr_flags], y[tr_flags], minlength=n_bins)
+    counts_1 = np.bincount(bins[tr_flags], minlength=n_bins)
+    sums_sq_1 = np.bincount(bins[tr_flags], y[tr_flags] ** 2, minlength=n_bins)
+
+    known_bins = (counts_0 > 0) & (counts_1 > 0)
+
+    stds = np.sqrt((sums_sq_0 / counts_0 - (sums_0 / counts_0) ** 2) / counts_0 + (
+            sums_sq_1 / counts_1 - (sums_1 / counts_1) ** 2) / counts_1)
+    stds = stds[known_bins]
+
+    uplifts = sums_1[known_bins] / counts_1[known_bins] - sums_0[known_bins] / counts_0[known_bins]
+    return boundaries[known_bins], uplifts, stds

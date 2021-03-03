@@ -51,7 +51,7 @@ class DecisionTree:
                 assert right_stats.shape[-1] == binarizer.n_bins + 1
                 assert np.allclose((left_stats[:, 0, 0] + right_stats[:, 0, 0]), current_node.stats)
 
-                split_scores = loss.score(left_stats) + loss.score(right_stats)
+                split_scores = loss.score(left_stats, right_stats)
                 valid_splits = loss.valid_stats(left_stats) & loss.valid_stats(right_stats)
 
                 if valid_splits.sum() == 0:
@@ -147,7 +147,7 @@ class DecisionTree:
 
 class DecisionTreeModel:
     def __init__(self,
-                 nodes: List['TreeNode'],
+                 nodes: List[Optional['TreeNode']],
                  depth: int,
                  binarizer: Binarizer,
                  loss: AdditiveLoss):
@@ -201,11 +201,13 @@ class DecisionTreeModel:
             n = self.nodes[node_index]
             assert n is not None
 
-            if self.nodes[node_index].is_terminal():
+            if n.is_terminal():
                 return self.loss.leaf_predicts(n.stats) * point_weights
 
             left_n = self.nodes[2 * node_index + 1]
             right_n = self.nodes[2 * node_index + 2]
+            assert left_n is not None
+            assert right_n is not None
 
             w_left = point_weights.copy()
             w_right = point_weights
@@ -231,6 +233,7 @@ class DecisionTreeModel:
 
         def append(node_id: int, prefix: str, beginning: str):
             node = self.nodes[node_id]
+            assert node is not None
 
             result = beginning + node.pretty_str(self.loss, feature_names)
             if node.f_index is None:
