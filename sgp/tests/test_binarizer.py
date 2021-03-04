@@ -19,7 +19,8 @@ def test_binarizer():
 def test_binary_arrays():
     x = [0] * 100000 + [1]
     X = np.vstack((x, x)).T
-    df_bins = Binarizer(n_bins=64).fit_transform(X)
+    binarizer = Binarizer(n_bins=64)
+    df_bins = binarizer.fit_transform(X)
     assert np.all(df_bins[0] == df_bins[1])
     assert len(set(df_bins.ravel())) == 2
 
