@@ -1,5 +1,5 @@
 # Inspired by [jmll library](https://github.com/spbsu-ml-community/jmll)
-
+from concurrent.futures.thread import ThreadPoolExecutor
 from typing import Tuple, List, Optional
 
 import numpy as np
@@ -13,11 +13,13 @@ class DecisionTree:
     def __init__(self, max_depth: int = 3,
                  binarizer: Optional[Binarizer] = None,
                  n_bins: int = 32,
-                 verbose: bool = False):
+                 verbose: bool = False,
+                 n_jobs: int = 8):
         self.max_depth = max_depth
         self.verbose = verbose
         self.binarizer = binarizer
         self.n_bins = n_bins
+        self.n_jobs = n_jobs
         if binarizer is not None:
             self.n_bins = binarizer.n_bins
 
@@ -28,7 +30,7 @@ class DecisionTree:
         assert_all_finite(X)
         assert_all_finite(point_stats)
 
-        df_bins, binarizer = DecisionTree.check_input(X, self.binarizer, self.n_bins, binarize)
+        df_bins, binarizer = DecisionTree.check_input(X, self.binarizer, self.n_bins, binarize, n_jobs=self.n_jobs)
         assert binarizer.boundaries is not None
         assert point_stats.shape[1] == df_bins.shape[1]
         assert point_stats.ndim == 2
@@ -40,7 +42,7 @@ class DecisionTree:
         nodes[0] = TreeNode(point_stats.sum(axis=1))
 
         for depth in np.arange(self.max_depth):
-            stats = DecisionTree.eval_stats(df_bins, items_leafs, point_stats, depth, binarizer.n_bins)
+            stats = self.eval_stats(df_bins, items_leafs, point_stats, depth, binarizer.n_bins)
 
             for node_id in DecisionTree.leafs_ids_range(depth):
                 current_node = nodes[node_id]
@@ -87,12 +89,13 @@ class DecisionTree:
     def check_input(X: np.ndarray,
                     binarizer: Optional[Binarizer],
                     n_bins: int,
-                    binarize: bool) -> Tuple[np.ndarray, Binarizer]:
+                    binarize: bool,
+                    n_jobs: int) -> Tuple[np.ndarray, Binarizer]:
         df_bins = X
 
         assert (binarize and binarizer is None) or (not binarize and binarizer is not None)
         if binarizer is None:
-            binarizer = Binarizer(n_bins)
+            binarizer = Binarizer(n_bins, n_jobs=n_jobs)
             df_bins = binarizer.fit_transform(X)
         elif binarize:
             df_bins = binarizer.transform(X)
@@ -105,8 +108,8 @@ class DecisionTree:
         assert len(result) == 2 ** depth, 'There should be 2^depth leafs in binary tree at level `depth`'
         return result
 
-    @staticmethod
-    def eval_stats(df_bins: np.ndarray,
+    def eval_stats(self,
+                   df_bins: np.ndarray,
                    items_leafs: np.ndarray,
                    point_stats: np.ndarray,
                    depth: int,
@@ -119,16 +122,16 @@ class DecisionTree:
         # Offsets for the leaf-bin axis
         leaf_bin_axis_offsets = items_leafs * n_bins
 
-        # Reuse for an optimization
-        leaf_bin_indexes = np.zeros(df_bins.shape[1], dtype=np.int64)
-
-        for f_index in range(df_bins.shape[0]):
+        def f(f_index: int) -> None:
             # Coordinates in leaf-bin axis
-            leaf_bin_indexes = np.add(df_bins[f_index], leaf_bin_axis_offsets, out=leaf_bin_indexes)
-
+            leaf_bin_indexes = np.add(df_bins[f_index], leaf_bin_axis_offsets)
             for s_index in range(point_stats.shape[0]):
-                b_count = np.bincount(leaf_bin_indexes, weights=point_stats[s_index], minlength=leaf_bin_axis_shape)
-                result[s_index, f_index] = b_count
+                result[s_index, f_index] = np.bincount(leaf_bin_indexes, weights=point_stats[s_index],
+                                                       minlength=leaf_bin_axis_shape)
+
+        with ThreadPoolExecutor(max_workers=self.n_jobs) as pool:
+            for f_index in range(df_bins.shape[0]):
+                pool.submit(f, f_index)
 
         return result.reshape((point_stats.shape[0], df_bins.shape[0], leafs_shape, n_bins))
 

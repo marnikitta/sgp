@@ -17,6 +17,7 @@ class Boosting:
                  n_bins: int = 32,
                  random_state: int = 42,
                  min_samples_leaf: int = 50,
+                 n_jobs: int = 8,
                  **kwargs):
         self.iterations = iterations
         self.shrinkage = shrinkage
@@ -25,12 +26,13 @@ class Boosting:
         self.n_bins = n_bins
         self.tree_params = kwargs
         self.min_samples_leaf = min_samples_leaf
+        self.n_jobs = n_jobs
 
     def fit(self, X: np.ndarray,
             loss: 'DifferentiableLoss',
             binarize: bool = True,
             listeners: Optional[List[Callable[[List[DecisionTreeModel]], bool]]] = None) -> List[DecisionTreeModel]:
-        df_bins, binarizer = DecisionTree.check_input(X, self.binarizer, self.n_bins, binarize)
+        df_bins, binarizer = DecisionTree.check_input(X, self.binarizer, self.n_bins, binarize, self.n_jobs)
 
         if listeners is None:
             listeners = []

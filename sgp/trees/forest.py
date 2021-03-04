@@ -32,7 +32,7 @@ class RandomForest:
             point_stats: np.ndarray,
             loss: AdditiveLoss,
             binarize: bool = True) -> 'RandomForestModel':
-        df_bins, binarizer = DecisionTree.check_input(X, self.binarizer, self.n_bins, binarize)
+        df_bins, binarizer = DecisionTree.check_input(X, self.binarizer, self.n_bins, binarize, n_jobs=self.n_jobs)
 
         m = DecisionTree(binarizer=binarizer, **self.tree_params)
 
@@ -45,7 +45,8 @@ class RandomForest:
                 print(f'{i}-th tree is done')
             return tree
 
-        trees = Parallel(n_jobs=self.n_jobs)(delayed(train_ith_tree)(i) for i in range(self.n_trees))
+        # trees = Parallel(n_jobs=self.n_jobs)(delayed(train_ith_tree)(i) for i in range(self.n_trees))
+        trees = [train_ith_tree(i) for i in range(self.n_trees)]
         return RandomForestModel(trees)
 
 
