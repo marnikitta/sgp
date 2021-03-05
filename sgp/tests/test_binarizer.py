@@ -1,7 +1,8 @@
 import numpy as np
+import scipy.stats
 from sklearn.datasets import load_boston
 
-from sgp.trees.binarizer import Binarizer
+from sgp.trees.binarizer import Binarizer, binarization_plot
 
 
 def test_binarizer():
@@ -32,6 +33,17 @@ def test_ternary_arrays():
     assert len(set(df_bins.ravel())) == 3
 
 
+def test_plot():
+    x = np.asarray([-1] * 10 + [0] * 100000 + [1] * 10)
+    tr = scipy.stats.bernoulli(0.5).rvs(len(x))
+    y = scipy.stats.norm(0, 1).rvs(len(x))
+    x_plot, y_plot, std_plot = binarization_plot(x, tr, y)
+    assert len(x_plot) == 3
+    assert len(y_plot) == 3
+    assert len(std_plot) == 3
+
+
 # test_binarizer()
 # test_binary_arrays()
 # test_ternary_arrays()
+# test_plot()

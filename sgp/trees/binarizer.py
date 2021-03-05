@@ -47,17 +47,12 @@ class Binarizer:
     def fit_transform(self, X: np.ndarray) -> np.ndarray:
         return self.fit(X).transform(X)
 
-    def sample_columns(self, columns: np.ndarray) -> 'Binarizer':
-        assert self.boundaries is not None
-        result = Binarizer(self.n_bins)
-        result.boundaries = self.boundaries[columns]
-        return result
-
 
 def binarization_plot(x, tr, y, n_bins=32):
     bins_transformer = Binarizer(n_bins=n_bins).fit(x.reshape(-1, 1))
     bins = bins_transformer.transform(x.reshape(-1, 1)).ravel()
     boundaries = bins_transformer.boundaries[0]
+    n_bins = len(boundaries)
 
     tr_flags = tr.astype(np.bool)
 
